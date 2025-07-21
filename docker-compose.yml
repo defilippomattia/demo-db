@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: demodb
+    restart: always
+    environment:
+      POSTGRES_USER: demouser
+      POSTGRES_PASSWORD: demopass
+      POSTGRES_DB: demodb
+    ports:
+      - "5555:5432"
+    volumes:
+      - ./data.sql:/docker-entrypoint-initdb.d/data.sql:ro
