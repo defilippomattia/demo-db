@@ -1,0 +1,15 @@
+{
+    "host":"localhost",
+    "port": "5555",
+    "database":"demodb",
+    "username":"demouser",
+    "password":"demopass",
+    "inserter": {
+        "mode":"timestamp-only",
+        "every_n_seconds":1,
+        "wal_switcher": {
+            "enabled": true,
+            "every_n_seconds": 60
+        }
+    }
+}

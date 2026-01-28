@@ -1,13 +1,16 @@
-services:
-  db:
-    image: postgres:17-alpine
-    container_name: demodb
-    restart: always
-    environment:
-      POSTGRES_USER: demouser
-      POSTGRES_PASSWORD: demopass
-      POSTGRES_DB: demodb
-    ports:
-      - "5555:5432"
-    volumes:
-      - ./data.sql:/docker-entrypoint-initdb.d/data.sql:ro
+  services:
+    db:
+      image: postgres:17-alpine
+      container_name: demodb
+      restart: always
+      environment:
+        POSTGRES_USER: demouser
+        POSTGRES_PASSWORD: demopass
+        POSTGRES_DB: demodb
+        TZ: Europe/Amsterdam
+        PGTZ: Europe/Amsterdam
+      ports:
+        - "5555:5432"
+      volumes:
+        - ./00-create-tables.sql:/docker-entrypoint-initdb.d/00-create-tables.sql:ro
+        - ./01-insert-data.sql:/docker-entrypoint-initdb.d/01-insert-data.sql:ro

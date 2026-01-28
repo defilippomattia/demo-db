@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -170,7 +171,7 @@ func runInsert(cfg *InserterConfig, dbConn *pgx.Conn) {
 		return
 	}
 
-	fmt.Println("Running timestamp-only insert...")
+	fmt.Println("Running insert every", cfg.Inserter.EveryNSeconds, "seconds in timestamp table.\n...Press Ctrl+C to stop.")
 
 	for {
 		// truncate to seconds
@@ -183,10 +184,33 @@ func runInsert(cfg *InserterConfig, dbConn *pgx.Conn) {
 			return
 		}
 
-		fmt.Println("Inserted current timestamp (seconds precision).")
-
 		time.Sleep(time.Duration(cfg.Inserter.EveryNSeconds) * time.Second)
 	}
+}
+
+//go:embed 00-create-tables.sql 01-insert-data.sql
+var embeddedSqlFiles embed.FS
+
+func recreate(cfg *InserterConfig, dbConn *pgx.Conn) error {
+	if err := dropTables(dbConn); err != nil {
+		return fmt.Errorf("error dropping tables: %w", err)
+	}
+	sqlFiles := []string{
+		"00-create-tables.sql",
+		"01-insert-data.sql",
+	}
+	for _, file := range sqlFiles {
+		content, err := embeddedSqlFiles.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("error reading SQL file %s: %w", file, err)
+		}
+		_, err = dbConn.Exec(context.Background(), string(content))
+		if err != nil {
+			return fmt.Errorf("error executing SQL file %s: %w", file, err)
+		}
+		fmt.Printf("Executed SQL file %s successfully.\n", file)
+	}
+	return nil
 }
 
 func main() {
@@ -236,6 +260,11 @@ func main() {
 		}
 	case flags.Recreate:
 		fmt.Println("Recreating all tables...")
+		if err := recreate(cfg, dbConn); err != nil {
+			fmt.Println("Error while recreating tables:", err)
+			return
+		}
+		fmt.Println("Recreation completed successfully.")
 	}
 
 }
