@@ -151,26 +151,17 @@ func dropTables(conn *pgx.Conn) error {
 		"track",
 	}
 
-	if len(tables) == 0 {
-		return fmt.Errorf("no tables specified for truncation")
-	}
-
-	quoted := make([]string, 0, len(tables))
 	for _, t := range tables {
-		quoted = append(quoted, fmt.Sprintf(`"%s"`, t))
-	}
-
-	query := fmt.Sprintf(
-		"DROP TABLE %s",
-		strings.Join(quoted, ", "),
-	)
-
-	_, err := conn.Exec(context.Background(), query)
-	if err != nil {
-		return fmt.Errorf("dropping tables failed: %w", err)
+		query := fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, t)
+		_, err := conn.Exec(context.Background(), query)
+		if err != nil {
+			return fmt.Errorf("dropping table %s failed: %w", t, err)
+		}
+		fmt.Printf("Dropped table %s (if existed)\n", t)
 	}
 
 	return nil
+
 }
 
 func runInsert(cfg *InserterConfig, dbConn *pgx.Conn) {
