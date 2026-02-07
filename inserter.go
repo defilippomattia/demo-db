@@ -19,6 +19,7 @@ type CommandFlags struct {
 	Insert     bool
 	DropTables bool
 	Recreate   bool
+	Validate   bool
 }
 
 type InserterConfig struct {
@@ -38,6 +39,7 @@ func parseAndValidateFlags() (*CommandFlags, error) {
 	insert := flag.Bool("insert", false, "Insert data")
 	dropTables := flag.Bool("drop-tables", false, "Drop all tables")
 	recreate := flag.Bool("recreate", false, "Drop and recreate all tables and insert data")
+	validate := flag.Bool("validate", false, "Validate database connection and config")
 
 	flag.Parse()
 
@@ -55,9 +57,12 @@ func parseAndValidateFlags() (*CommandFlags, error) {
 	if *recreate {
 		actionCount++
 	}
+	if *validate {
+		actionCount++
+	}
 
 	if actionCount == 0 {
-		return nil, fmt.Errorf("one action is required: --insert, --drop-tables, or --recreate")
+		return nil, fmt.Errorf("one action is required: --insert, --drop-tables, --validate or --recreate")
 	}
 	if actionCount > 1 {
 		return nil, fmt.Errorf("only one action can be specified at a time")
@@ -68,6 +73,7 @@ func parseAndValidateFlags() (*CommandFlags, error) {
 		Insert:     *insert,
 		DropTables: *dropTables,
 		Recreate:   *recreate,
+		Validate:   *validate,
 	}, nil
 }
 
@@ -209,6 +215,17 @@ func main() {
 	defer dbConn.Close()
 
 	switch {
+	case flags.Validate:
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := dbConn.Ping(ctx); err != nil {
+			fmt.Printf("validation failed: could not connect to database, error: %v\n", err)
+			os.Exit(1)
+		}
+
+		fmt.Println("validation successful: config is valid and database connection established.")
+
 	case flags.Insert:
 		fmt.Println("Running insert...")
 		runInsert(cfg, dbConn)
