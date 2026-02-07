@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"strings"
 	"time"
@@ -144,27 +145,46 @@ func dropTables(cfg *InserterConfig, pool *pgxpool.Pool) error {
 	return nil
 }
 
+const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+
+func GenerateRandomString(length int) string {
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = alphabet[rand.Uint64N(uint64(len(alphabet)))]
+	}
+	return string(result)
+}
+
 func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
-	if strings.ToLower(cfg.Inserter.Mode) != "timestamp-only" {
-		fmt.Println("Insert mode not supported yet.")
-		return
-	}
-
-	fmt.Printf("Running insert every %d seconds in timestamp table.\n...Press Ctrl+C to stop.\n", cfg.Inserter.EveryNSeconds)
-
-	for {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
-		cancel()
-
-		if err != nil {
-			fmt.Println("Error inserting timestamp (will retry):", err)
-			time.Sleep(1 * time.Second)
-			continue
+	if strings.ToLower(cfg.Inserter.Mode) == "timestamp-only" {
+		fmt.Printf("Running insert every %d seconds in timestamp table.\n...Press Ctrl+C to stop.\n", cfg.Inserter.EveryNSeconds)
+		for {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
+			cancel()
+			if err != nil {
+				fmt.Println("Error inserting timestamp (will retry):", err)
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			time.Sleep(time.Duration(cfg.Inserter.EveryNSeconds) * time.Second)
 		}
+	} else if strings.ToLower(cfg.Inserter.Mode) == "gibberish-data" {
+		fmt.Println("Inserting gibberish data into tables...")
 
-		time.Sleep(time.Duration(cfg.Inserter.EveryNSeconds) * time.Second)
+		for {
+			randStr := GenerateRandomString(20)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			_, err := pool.Exec(ctx, `INSERT INTO "artist"(name) VALUES ($1)`, randStr)
+			cancel()
+			if err != nil {
+				fmt.Println("Error inserting gibberish data into artist table:", err)
+				return
+			}
+			fmt.Printf("Inserted gibberish data '%s' into artist table.\n", randStr)
+		}
 	}
+
 }
 
 //go:embed 00-create-tables.sql 01-insert-data.sql

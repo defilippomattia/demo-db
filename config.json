@@ -5,7 +5,7 @@
     "username":"demouser",
     "password":"demopass",
     "inserter": {
-        "mode":"timestamp-only",
+        "mode":"gibberish-data",
         "every_n_seconds":1,
         "wal_switcher": {
             "enabled": true,
