@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type CommandFlags struct {
@@ -57,11 +57,8 @@ func parseAndValidateFlags() (*CommandFlags, error) {
 	}
 
 	if actionCount == 0 {
-		return nil, fmt.Errorf(
-			"one action is required: --insert, --drop-tables, or --recreate",
-		)
+		return nil, fmt.Errorf("one action is required: --insert, --drop-tables, or --recreate")
 	}
-
 	if actionCount > 1 {
 		return nil, fmt.Errorf("only one action can be specified at a time")
 	}
@@ -86,12 +83,7 @@ func loadConfig(path string) (*InserterConfig, error) {
 		return nil, fmt.Errorf("cannot parse config file: %w", err)
 	}
 
-	validModes := []string{
-		"timestamp-only",
-		"realistic-data",
-		"gibberish-data",
-	}
-
+	validModes := []string{"timestamp-only", "realistic-data", "gibberish-data"}
 	modeValid := false
 	for _, m := range validModes {
 		if strings.ToLower(cfg.Inserter.Mode) == m {
@@ -99,89 +91,70 @@ func loadConfig(path string) (*InserterConfig, error) {
 			break
 		}
 	}
+
 	if !modeValid {
-		return nil, fmt.Errorf(
-			"invalid inserter.mode '%s', must be one of %v",
-			cfg.Inserter.Mode,
-			validModes,
-		)
+		return nil, fmt.Errorf("invalid inserter.mode '%s', must be one of %v", cfg.Inserter.Mode, validModes)
 	}
 
 	return &cfg, nil
 }
 
-func connectDB(cfg *InserterConfig) (*pgx.Conn, error) {
+func connectPool(cfg *InserterConfig) (*pgxpool.Pool, error) {
 	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s",
-		cfg.Username,
-		cfg.Password,
-		cfg.Host,
-		cfg.Port,
-		cfg.Database,
+		"postgres://%s:%s@%s:%s/%s?connect_timeout=3",
+		cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.Database,
 	)
+
+	poolCfg, err := pgxpool.ParseConfig(connStr)
+	if err != nil {
+		return nil, err
+	}
+
+	poolCfg.MaxConns = 5
+	poolCfg.MinConns = 1
+	poolCfg.HealthCheckPeriod = 5 * time.Second
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	conn, err := pgx.Connect(ctx, connStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to DB: %w", err)
-	}
-
-	if err := conn.Ping(ctx); err != nil {
-		conn.Close(ctx)
-		return nil, fmt.Errorf("cannot ping DB: %w", err)
-	}
-
-	return conn, nil
+	return pgxpool.NewWithConfig(ctx, poolCfg)
 }
 
-func dropTables(conn *pgx.Conn) error {
+func dropTables(cfg *InserterConfig, pool *pgxpool.Pool) error {
 	tables := []string{
-		"timestamp",
-		"album",
-		"artist",
-		"customer",
-		"employee",
-		"genre",
-		"invoice",
-		"invoice_line",
-		"media_type",
-		"playlist",
-		"playlist_track",
-		"track",
+		"timestamp", "album", "artist", "customer", "employee",
+		"genre", "invoice", "invoice_line", "media_type",
+		"playlist", "playlist_track", "track",
 	}
 
 	for _, t := range tables {
 		query := fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, t)
-		_, err := conn.Exec(context.Background(), query)
+		_, err := pool.Exec(context.Background(), query)
 		if err != nil {
 			return fmt.Errorf("dropping table %s failed: %w", t, err)
 		}
 		fmt.Printf("Dropped table %s (if existed)\n", t)
 	}
-
 	return nil
-
 }
 
-func runInsert(cfg *InserterConfig, dbConn *pgx.Conn) {
+func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 	if strings.ToLower(cfg.Inserter.Mode) != "timestamp-only" {
 		fmt.Println("Insert mode not supported yet.")
 		return
 	}
 
-	fmt.Println("Running insert every", cfg.Inserter.EveryNSeconds, "seconds in timestamp table.\n...Press Ctrl+C to stop.")
+	fmt.Printf("Running insert every %d seconds in timestamp table.\n...Press Ctrl+C to stop.\n", cfg.Inserter.EveryNSeconds)
 
 	for {
-		// truncate to seconds
-		_, err := dbConn.Exec(
-			context.Background(),
-			`INSERT INTO "timestamp"(created_at) VALUES (NOW())`,
-		)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
+		cancel()
+
 		if err != nil {
-			fmt.Println("Error inserting timestamp:", err)
-			return
+			fmt.Println("Error inserting timestamp (will retry):", err)
+			time.Sleep(1 * time.Second)
+			continue
 		}
 
 		time.Sleep(time.Duration(cfg.Inserter.EveryNSeconds) * time.Second)
@@ -191,20 +164,20 @@ func runInsert(cfg *InserterConfig, dbConn *pgx.Conn) {
 //go:embed 00-create-tables.sql 01-insert-data.sql
 var embeddedSqlFiles embed.FS
 
-func recreate(cfg *InserterConfig, dbConn *pgx.Conn) error {
-	if err := dropTables(dbConn); err != nil {
+func recreate(cfg *InserterConfig, pool *pgxpool.Pool) error {
+	if err := dropTables(cfg, pool); err != nil {
 		return fmt.Errorf("error dropping tables: %w", err)
 	}
-	sqlFiles := []string{
-		"00-create-tables.sql",
-		"01-insert-data.sql",
-	}
+
+	sqlFiles := []string{"00-create-tables.sql", "01-insert-data.sql"}
+
 	for _, file := range sqlFiles {
 		content, err := embeddedSqlFiles.ReadFile(file)
 		if err != nil {
 			return fmt.Errorf("error reading SQL file %s: %w", file, err)
 		}
-		_, err = dbConn.Exec(context.Background(), string(content))
+
+		_, err = pool.Exec(context.Background(), string(content))
 		if err != nil {
 			return fmt.Errorf("error executing SQL file %s: %w", file, err)
 		}
@@ -228,16 +201,14 @@ func main() {
 
 	fmt.Println("Config loaded successfully, inserter mode:", cfg.Inserter.Mode)
 
-	dbConn, err := connectDB(cfg)
+	dbConn, err := connectPool(cfg)
 	if err != nil {
 		fmt.Println("Database connection failed:", err)
 		return
 	}
-	defer dbConn.Close(context.Background())
-	fmt.Println("Database connection successful!")
+	defer dbConn.Close()
 
 	switch {
-
 	case flags.Insert:
 		fmt.Println("Running insert...")
 		runInsert(cfg, dbConn)
@@ -250,14 +221,14 @@ func main() {
 
 		if input == "yes" || input == "y" {
 			fmt.Println("Dropping all tables...")
-			if err := dropTables(dbConn); err != nil {
+			if err := dropTables(cfg, dbConn); err != nil {
 				fmt.Println("Error while dropping tables:", err)
 				return
 			}
-
 		} else {
 			fmt.Println("Aborted. No rows were deleted.")
 		}
+
 	case flags.Recreate:
 		fmt.Println("Recreating all tables...")
 		if err := recreate(cfg, dbConn); err != nil {
@@ -266,5 +237,4 @@ func main() {
 		}
 		fmt.Println("Recreation completed successfully.")
 	}
-
 }
