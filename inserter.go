@@ -182,7 +182,7 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 		fmt.Println("Inserting gibberish data into tables...")
 
 		var wg sync.WaitGroup
-		wg.Add(4)
+		wg.Add(5)
 
 		fmt.Println("inserting gibberish data into artist table...")
 		go func() {
@@ -241,6 +241,41 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 					fmt.Println("Error inserting gibberish data into playlist table:", err)
 					return
 				}
+			}
+		}()
+
+		fmt.Println("inserting gibberish data into employee table...")
+		go func() {
+			defer wg.Done()
+			for {
+				len20RandStr := GenerateRandomString(20)
+				len40RandStr := GenerateRandomString(40)
+				len60RandStr := GenerateRandomString(60)
+
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := pool.Exec(ctx, `
+					INSERT INTO "employee" (
+						last_name, first_name, title, address, city, 
+						state, country, phone, fax, email
+					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+					len20RandStr, // last_name
+					len20RandStr, // first_name
+					len20RandStr, // title
+					len60RandStr, // address
+					len40RandStr, // city
+					len40RandStr, // state
+					len40RandStr, // country
+					len20RandStr, // phone
+					len20RandStr, // fax
+					len60RandStr, // email
+				)
+				cancel()
+
+				if err != nil {
+					fmt.Println("Error inserting gibberish data into employee table:", err)
+					return
+				}
+
 			}
 		}()
 
