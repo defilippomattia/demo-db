@@ -10,6 +10,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -179,29 +180,41 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 	} else if strings.ToLower(cfg.Inserter.Mode) == "gibberish-data" {
 		fmt.Println("Inserting gibberish data into tables...")
 
-		// for {
-		// 	randStr := GenerateRandomString(20)
-		// 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		// 	_, err := pool.Exec(ctx, `INSERT INTO "artist"(name) VALUES ($1)`, randStr)
-		// 	cancel()
-		// 	if err != nil {
-		// 		fmt.Println("Error inserting gibberish data into artist table:", err)
-		// 		return
-		// 	}
-		// 	fmt.Printf("Inserted gibberish data '%s' into artist table.\n", randStr)
-		// }
+		var wg sync.WaitGroup
+		wg.Add(2)
 
-		for {
-			randStr := GenerateRandomString(120)
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			_, err := pool.Exec(ctx, `INSERT INTO "genre"(name) VALUES ($1)`, randStr)
-			cancel()
-			if err != nil {
-				fmt.Println("Error inserting gibberish data into genre table:", err)
-				return
+		go func() {
+			defer wg.Done()
+			for {
+				randStr := GenerateRandomString(20)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := pool.Exec(ctx, `INSERT INTO "artist"(name) VALUES ($1)`, randStr)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting gibberish data into artist table:", err)
+					return
+				}
+				fmt.Printf("Inserted gibberish data '%s' into artist table.\n", randStr)
 			}
-			fmt.Printf("Inserted gibberish data '%s' into genre table.\n", randStr)
-		}
+		}()
+
+		go func() {
+			defer wg.Done()
+			for {
+				randStr := GenerateRandomString(120)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := pool.Exec(ctx, `INSERT INTO "genre"(name) VALUES ($1)`, randStr)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting gibberish data into genre table:", err)
+					return
+				}
+				fmt.Printf("Inserted gibberish data '%s' into genre table.\n", randStr)
+			}
+		}()
+
+		wg.Wait()
+
 	}
 
 }
