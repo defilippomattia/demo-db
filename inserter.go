@@ -16,11 +16,12 @@ import (
 )
 
 type CommandFlags struct {
-	ConfigPath string
-	Insert     bool
-	DropTables bool
-	Recreate   bool
-	Validate   bool
+	ConfigPath   string
+	Insert       bool
+	DropTables   bool
+	Recreate     bool
+	Validate     bool
+	CreateTables bool
 }
 
 type InserterConfig struct {
@@ -41,6 +42,7 @@ func parseAndValidateFlags() (*CommandFlags, error) {
 	dropTables := flag.Bool("drop-tables", false, "Drop all tables")
 	recreate := flag.Bool("recreate", false, "Drop and recreate all tables and insert data")
 	validate := flag.Bool("validate", false, "Validate database connection and config")
+	createTables := flag.Bool("create-tables", false, "Create tables without inserting data")
 
 	flag.Parse()
 
@@ -62,19 +64,24 @@ func parseAndValidateFlags() (*CommandFlags, error) {
 		actionCount++
 	}
 
+	if *createTables {
+		actionCount++
+	}
+
 	if actionCount == 0 {
-		return nil, fmt.Errorf("one action is required: --insert, --drop-tables, --validate or --recreate")
+		return nil, fmt.Errorf("one action is required: --insert, --create-tables, --drop-tables, --validate or --recreate")
 	}
 	if actionCount > 1 {
 		return nil, fmt.Errorf("only one action can be specified at a time")
 	}
 
 	return &CommandFlags{
-		ConfigPath: *configPath,
-		Insert:     *insert,
-		DropTables: *dropTables,
-		Recreate:   *recreate,
-		Validate:   *validate,
+		ConfigPath:   *configPath,
+		Insert:       *insert,
+		DropTables:   *dropTables,
+		Recreate:     *recreate,
+		Validate:     *validate,
+		CreateTables: *createTables,
 	}, nil
 }
 
@@ -190,13 +197,7 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 //go:embed 00-create-tables.sql 01-insert-data.sql
 var embeddedSqlFiles embed.FS
 
-func recreate(cfg *InserterConfig, pool *pgxpool.Pool) error {
-	if err := dropTables(cfg, pool); err != nil {
-		return fmt.Errorf("error dropping tables: %w", err)
-	}
-
-	sqlFiles := []string{"00-create-tables.sql", "01-insert-data.sql"}
-
+func executeSqlFiles(pool *pgxpool.Pool, sqlFiles []string) error {
 	for _, file := range sqlFiles {
 		content, err := embeddedSqlFiles.ReadFile(file)
 		if err != nil {
@@ -268,10 +269,18 @@ func main() {
 
 	case flags.Recreate:
 		fmt.Println("Recreating all tables...")
-		if err := recreate(cfg, dbConn); err != nil {
+		if err := executeSqlFiles(dbConn, []string{"00-create-tables.sql", "01-insert-data.sql"}); err != nil {
 			fmt.Println("Error while recreating tables:", err)
 			return
 		}
 		fmt.Println("Recreation completed successfully.")
+
+	case flags.CreateTables:
+		fmt.Println("Creating tables without inserting data...")
+		if err := executeSqlFiles(dbConn, []string{"00-create-tables.sql"}); err != nil {
+			fmt.Println("Error while creating tables:", err)
+			return
+		}
+		fmt.Println("Tables created successfully.")
 	}
 }
