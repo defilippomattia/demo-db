@@ -182,7 +182,7 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 		fmt.Println("Inserting gibberish data into tables...")
 
 		var wg sync.WaitGroup
-		wg.Add(5)
+		wg.Add(6)
 
 		fmt.Println("inserting gibberish data into artist table...")
 		go func() {
@@ -276,6 +276,29 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 					return
 				}
 
+			}
+		}()
+
+		fmt.Println("inserting gibberish data into bigtable table...")
+		go func() {
+			defer wg.Done()
+			randStr := GenerateRandomString(120)
+
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := pool.Exec(ctx, `
+					INSERT INTO "bigtable"(cola, colb, colc, cold, cole) VALUES ($1, $2, $3, $4, $5)`,
+					randStr,
+					randStr,
+					randStr,
+					randStr,
+					randStr,
+				)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting gibberish data into bigtable table:", err)
+					return
+				}
 			}
 		}()
 
