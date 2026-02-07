@@ -164,6 +164,7 @@ func GenerateRandomString(length int) string {
 }
 
 func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
+	//todo: refactor
 	if strings.ToLower(cfg.Inserter.Mode) == "timestamp-only" {
 		fmt.Printf("Running insert every %d seconds in timestamp table.\n...Press Ctrl+C to stop.\n", cfg.Inserter.EveryNSeconds)
 		for {
@@ -181,8 +182,9 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 		fmt.Println("Inserting gibberish data into tables...")
 
 		var wg sync.WaitGroup
-		wg.Add(2)
+		wg.Add(4)
 
+		fmt.Println("inserting gibberish data into artist table...")
 		go func() {
 			defer wg.Done()
 			for {
@@ -194,10 +196,10 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 					fmt.Println("Error inserting gibberish data into artist table:", err)
 					return
 				}
-				fmt.Printf("Inserted gibberish data '%s' into artist table.\n", randStr)
 			}
 		}()
 
+		fmt.Println("inserting gibberish data into genre table...")
 		go func() {
 			defer wg.Done()
 			for {
@@ -209,7 +211,36 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 					fmt.Println("Error inserting gibberish data into genre table:", err)
 					return
 				}
-				fmt.Printf("Inserted gibberish data '%s' into genre table.\n", randStr)
+			}
+		}()
+
+		fmt.Println("inserting gibberish data into media_type table...")
+		go func() {
+			defer wg.Done()
+			for {
+				randStr := GenerateRandomString(120)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := pool.Exec(ctx, `INSERT INTO "media_type"(name) VALUES ($1)`, randStr)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting gibberish data into media_type table:", err)
+					return
+				}
+			}
+		}()
+
+		fmt.Println("inserting gibberish data into playlist table...")
+		go func() {
+			defer wg.Done()
+			for {
+				randStr := GenerateRandomString(120)
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				_, err := pool.Exec(ctx, `INSERT INTO "playlist"(name) VALUES ($1)`, randStr)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting gibberish data into playlist table:", err)
+					return
+				}
 			}
 		}()
 
