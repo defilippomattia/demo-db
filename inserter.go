@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"os/signal"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -135,21 +137,28 @@ func connectPool(cfg *InserterConfig) (*pgxpool.Pool, error) {
 	return pgxpool.NewWithConfig(ctx, poolCfg)
 }
 
-func dropTables(cfg *InserterConfig, pool *pgxpool.Pool) error {
+func dropTables(ctx context.Context, cfg *InserterConfig, pool *pgxpool.Pool) error {
 	tables := []string{
 		"timestamp", "album", "artist", "customer", "employee",
-		"genre", "invoice", "invoice_line", "media_type",
-		"playlist", "playlist_track", "track",
+		"playlist", "playlist_track", "track", "bigtable",
 	}
 
+	batch := &pgx.Batch{}
 	for _, t := range tables {
 		query := fmt.Sprintf(`DROP TABLE IF EXISTS "%s" CASCADE`, t)
-		_, err := pool.Exec(context.Background(), query)
+		batch.Queue(query)
+	}
+	results := pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	for _, t := range tables {
+		_, err := results.Exec()
 		if err != nil {
 			return fmt.Errorf("dropping table %s failed: %w", t, err)
 		}
 		fmt.Printf("Dropped table %s (if existed)\n", t)
 	}
+
 	return nil
 }
 
@@ -349,6 +358,9 @@ func main() {
 	}
 	defer dbConn.Close()
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	switch {
 	case flags.Validate:
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -373,7 +385,7 @@ func main() {
 
 		if input == "yes" || input == "y" {
 			fmt.Println("Dropping all tables...")
-			if err := dropTables(cfg, dbConn); err != nil {
+			if err := dropTables(ctx, cfg, dbConn); err != nil {
 				fmt.Println("Error while dropping tables:", err)
 				return
 			}
