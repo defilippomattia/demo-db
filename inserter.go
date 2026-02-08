@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"context"
 	"embed"
-	"encoding/json"
-	"flag"
 	"fmt"
 	"math/rand/v2"
 	"os"
@@ -18,129 +16,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-type CommandFlags struct {
-	ConfigPath   string
-	Insert       bool
-	DropTables   bool
-	Recreate     bool
-	Validate     bool
-	CreateTables bool
-}
-
-type InserterConfig struct {
-	Host     string `json:"host"`
-	Port     string `json:"port"`
-	Database string `json:"database"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Inserter struct {
-		Mode          string `json:"mode"`
-		EveryNSeconds int    `json:"every_n_seconds"`
-	} `json:"inserter"`
-}
-
-func parseAndValidateFlags() (*CommandFlags, error) {
-	configPath := flag.String("config", "", "Path to config file")
-	insert := flag.Bool("insert", false, "Insert data")
-	dropTables := flag.Bool("drop-tables", false, "Drop all tables")
-	recreate := flag.Bool("recreate", false, "Drop and recreate all tables and insert data")
-	validate := flag.Bool("validate", false, "Validate database connection and config")
-	createTables := flag.Bool("create-tables", false, "Create tables without inserting data")
-
-	flag.Parse()
-
-	if *configPath == "" {
-		return nil, fmt.Errorf("--config is required")
-	}
-
-	actionCount := 0
-	if *insert {
-		actionCount++
-	}
-	if *dropTables {
-		actionCount++
-	}
-	if *recreate {
-		actionCount++
-	}
-	if *validate {
-		actionCount++
-	}
-
-	if *createTables {
-		actionCount++
-	}
-
-	if actionCount == 0 {
-		return nil, fmt.Errorf("one action is required: --insert, --create-tables, --drop-tables, --validate or --recreate")
-	}
-	if actionCount > 1 {
-		return nil, fmt.Errorf("only one action can be specified at a time")
-	}
-
-	return &CommandFlags{
-		ConfigPath:   *configPath,
-		Insert:       *insert,
-		DropTables:   *dropTables,
-		Recreate:     *recreate,
-		Validate:     *validate,
-		CreateTables: *createTables,
-	}, nil
-}
-
-func loadConfig(path string) (*InserterConfig, error) {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, fmt.Errorf("cannot open config file: %w", err)
-	}
-	defer file.Close()
-
-	var cfg InserterConfig
-	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
-		return nil, fmt.Errorf("cannot parse config file: %w", err)
-	}
-
-	validModes := []string{"timestamp-only", "realistic-data", "gibberish-data"}
-	modeValid := false
-	for _, m := range validModes {
-		if strings.ToLower(cfg.Inserter.Mode) == m {
-			modeValid = true
-			break
-		}
-	}
-
-	if !modeValid {
-		return nil, fmt.Errorf("invalid inserter.mode '%s', must be one of %v", cfg.Inserter.Mode, validModes)
-	}
-
-	return &cfg, nil
-}
-
-func connectPool(cfg *InserterConfig) (*pgxpool.Pool, error) {
-	connStr := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?connect_timeout=3",
-		cfg.Username, cfg.Password, cfg.Host, cfg.Port, cfg.Database,
-	)
-
-	poolCfg, err := pgxpool.ParseConfig(connStr)
-	if err != nil {
-		return nil, err
-	}
-
-	poolCfg.MaxConns = 5
-	poolCfg.MinConns = 1
-	poolCfg.HealthCheckPeriod = 5 * time.Second
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	return pgxpool.NewWithConfig(ctx, poolCfg)
-}
-
 func dropTables(ctx context.Context, cfg *InserterConfig, pool *pgxpool.Pool) error {
 	tables := []string{
 		"timestamp", "album", "artist", "customer", "employee",
-		"playlist", "playlist_track", "track", "bigtable",
+		"playlist", "playlist_track", "track", "genre", "media_type", "invoice", "invoice_line", "bigtable",
 	}
 
 	batch := &pgx.Batch{}
