@@ -5,11 +5,20 @@
     "username":"demouser",
     "password":"demopass",
     "inserter": {
-        "mode":"gibberish-data",
-        "every_n_seconds":1,
         "wal_switcher": {
-            "enabled": true,
+            "enabled": false,
             "every_n_seconds": 60
+        },
+        "timestamp_inserts": {
+            "enabled": true,
+            "every_n_seconds": 1
+        },
+        "bigtable_inserts": {
+            "enabled": false
+        },
+        "main_tables_inserts": {
+            "mode":"gibberish-data",
+            "enabled": true
         }
     }
 }

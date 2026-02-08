@@ -73,6 +73,7 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 	}
 
 	if cfg.Inserter.BigTableInserts.Enabled {
+		fmt.Println("Running bigtable inserts...")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -97,9 +98,6 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 	}
 
 	if cfg.Inserter.MainTablesInserts.Enabled {
-		fmt.Println("Inserting gibberish data into tables...")
-
-		var wg sync.WaitGroup
 		wg.Add(5)
 
 		fmt.Println("inserting gibberish data into artist table...")
@@ -197,9 +195,8 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			}
 		}()
 
-		wg.Wait()
-
 	}
+	wg.Wait()
 
 }
 
