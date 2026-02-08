@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"strings"
 )
 
 type CommandFlags struct {
@@ -17,6 +16,18 @@ type CommandFlags struct {
 	CreateTables bool
 }
 
+// type InserterConfig struct {
+// 	Host     string `json:"host"`
+// 	Port     string `json:"port"`
+// 	Database string `json:"database"`
+// 	Username string `json:"username"`
+// 	Password string `json:"password"`
+// 	Inserter struct {
+// 		Mode          string `json:"mode"`
+// 		EveryNSeconds int    `json:"every_n_seconds"`
+// 	} `json:"inserter"`
+// }
+
 type InserterConfig struct {
 	Host     string `json:"host"`
 	Port     string `json:"port"`
@@ -24,8 +35,23 @@ type InserterConfig struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Inserter struct {
-		Mode          string `json:"mode"`
-		EveryNSeconds int    `json:"every_n_seconds"`
+		WalSwitcher struct {
+			Enabled       bool `json:"enabled"`
+			EveryNSeconds int  `json:"every_n_seconds"`
+		} `json:"wal_switcher"`
+		TimestampInserts struct {
+			Enabled       bool `json:"enabled"`
+			EveryNSeconds int  `json:"every_n_seconds"`
+		} `json:"timestamp_inserts"`
+		BigTableInserts struct {
+			Enabled       bool `json:"enabled"`
+			EveryNSeconds int  `json:"every_n_seconds"`
+		} `json:"bigtable_inserts"`
+		MainTablesInserts struct {
+			Mode          string `json:"mode"`
+			Enabled       bool   `json:"enabled"`
+			EveryNSeconds int    `json:"every_n_seconds"`
+		} `json:"main_tables_inserts"`
 	} `json:"inserter"`
 }
 
@@ -90,18 +116,18 @@ func loadConfig(path string) (*InserterConfig, error) {
 		return nil, fmt.Errorf("cannot parse config file: %w", err)
 	}
 
-	validModes := []string{"timestamp-only", "realistic-data", "gibberish-data"}
-	modeValid := false
-	for _, m := range validModes {
-		if strings.ToLower(cfg.Inserter.Mode) == m {
-			modeValid = true
-			break
-		}
-	}
+	// validModes := []string{"timestamp-only", "realistic-data", "gibberish-data"}
+	// modeValid := false
+	// for _, m := range validModes {
+	// 	if strings.ToLower(cfg.Inserter.Mode) == m {
+	// 		modeValid = true
+	// 		break
+	// 	}
+	// }
 
-	if !modeValid {
-		return nil, fmt.Errorf("invalid inserter.mode '%s', must be one of %v", cfg.Inserter.Mode, validModes)
-	}
+	// if !modeValid {
+	// 	return nil, fmt.Errorf("invalid inserter.mode '%s', must be one of %v", cfg.Inserter.Mode, validModes)
+	// }
 
 	return &cfg, nil
 }

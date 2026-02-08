@@ -53,24 +53,54 @@ func GenerateRandomString(length int) string {
 
 func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 	//todo: refactor
-	if strings.ToLower(cfg.Inserter.Mode) == "timestamp-only" {
-		fmt.Printf("Running insert every %d seconds in timestamp table.\n...Press Ctrl+C to stop.\n", cfg.Inserter.EveryNSeconds)
-		for {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
-			cancel()
-			if err != nil {
-				fmt.Println("Error inserting timestamp (will retry):", err)
-				time.Sleep(1 * time.Second)
-				continue
+	var wg sync.WaitGroup
+
+	if cfg.Inserter.TimestampInserts.Enabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			fmt.Printf("Running timestamp inserts every %d seconds...\n", cfg.Inserter.TimestampInserts.EveryNSeconds)
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting timestamp:", err)
+				}
+				time.Sleep(time.Duration(cfg.Inserter.TimestampInserts.EveryNSeconds) * time.Second)
 			}
-			time.Sleep(time.Duration(cfg.Inserter.EveryNSeconds) * time.Second)
-		}
-	} else if strings.ToLower(cfg.Inserter.Mode) == "gibberish-data" {
+		}()
+	}
+
+	if cfg.Inserter.BigTableInserts.Enabled {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			randStr := GenerateRandomString(120)
+
+			for {
+				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				_, err := pool.Exec(ctx, `
+					INSERT INTO "bigtable"(cola, colb, colc, cold, cole) VALUES ($1, $2, $3, $4, $5)`,
+					randStr,
+					randStr,
+					randStr,
+					randStr,
+					randStr,
+				)
+				cancel()
+				if err != nil {
+					fmt.Println("Error inserting into bigtable:", err)
+				}
+			}
+		}()
+	}
+
+	if cfg.Inserter.MainTablesInserts.Enabled {
 		fmt.Println("Inserting gibberish data into tables...")
 
 		var wg sync.WaitGroup
-		wg.Add(6)
+		wg.Add(5)
 
 		fmt.Println("inserting gibberish data into artist table...")
 		go func() {
@@ -167,29 +197,6 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			}
 		}()
 
-		fmt.Println("inserting gibberish data into bigtable table...")
-		go func() {
-			defer wg.Done()
-			randStr := GenerateRandomString(120)
-
-			for {
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-				_, err := pool.Exec(ctx, `
-					INSERT INTO "bigtable"(cola, colb, colc, cold, cole) VALUES ($1, $2, $3, $4, $5)`,
-					randStr,
-					randStr,
-					randStr,
-					randStr,
-					randStr,
-				)
-				cancel()
-				if err != nil {
-					fmt.Println("Error inserting gibberish data into bigtable table:", err)
-					return
-				}
-			}
-		}()
-
 		wg.Wait()
 
 	}
@@ -228,7 +235,7 @@ func main() {
 		return
 	}
 
-	fmt.Println("Config loaded successfully, inserter mode:", cfg.Inserter.Mode)
+	// fmt.Println("Config loaded successfully, inserter mode:", cfg.Inserter.Mode)
 
 	dbConn, err := connectPool(cfg)
 	if err != nil {
