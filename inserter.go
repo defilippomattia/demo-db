@@ -51,174 +51,79 @@ func GenerateRandomString(length int) string {
 	return string(result)
 }
 
+func startInsertWorker(wg *sync.WaitGroup, ctx context.Context, tableName string, interval time.Duration, task func() error) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fmt.Printf("Starting insert worker for table %s with interval...\n", tableName)
+
+		for {
+			err := task()
+			if err != nil {
+				fmt.Printf("Error inserting into table %s: %v\n", tableName, err)
+				return
+			}
+
+			if interval > 0 {
+				select {
+				case <-time.After(interval):
+				case <-ctx.Done():
+					return
+				}
+			} else {
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
+			}
+		}
+	}()
+
+}
+
 func runInsert(ctx context.Context, cfg *InserterConfig, pool *pgxpool.Pool) {
 	//todo: refactor, try db subcontext
 	var wg sync.WaitGroup
 
 	if cfg.Inserter.TimestampInserts.Enabled {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			interval := time.Duration(cfg.Inserter.TimestampInserts.EveryNSeconds) * time.Second
-			ticker := time.NewTicker(interval)
-			defer ticker.Stop()
-			fmt.Printf("Running timestamp inserts every %d seconds...\n", cfg.Inserter.TimestampInserts.EveryNSeconds)
-			for {
-				_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
-				if err != nil {
-					fmt.Println("error inserting timestamp:", err)
-					return
-				}
-				select {
-				case <-ticker.C:
-				case <-ctx.Done():
-					return
-				}
-			}
-		}()
+		interval := time.Duration(cfg.Inserter.TimestampInserts.EveryNSeconds) * time.Second
+		startInsertWorker(&wg, ctx, "timestamp", interval, func() error {
+			_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
+			return err
+		})
 	}
 
 	if cfg.Inserter.BigTableInserts.Enabled {
-		fmt.Println("Running bigtable inserts...")
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		startInsertWorker(&wg, ctx, "bigtable", 0, func() error {
 			randStr := GenerateRandomString(120)
-
-			for {
-				_, err := pool.Exec(ctx, `
-					INSERT INTO "bigtable"(cola, colb, colc, cold, cole) VALUES ($1, $2, $3, $4, $5)`,
-					randStr,
-					randStr,
-					randStr,
-					randStr,
-					randStr,
-				)
-				if err != nil {
-					fmt.Println("Error inserting into bigtable:", err)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-			}
-		}()
+			_, err := pool.Exec(ctx, `INSERT INTO "bigtable"(cola, colb, colc, cold, cole) VALUES ($1, $2, $3, $4, $5)`,
+				randStr,
+				randStr,
+				randStr,
+				randStr,
+				randStr,
+			)
+			return err
+		})
 	}
 
 	if cfg.Inserter.MainTablesInserts.Enabled {
-		wg.Add(5)
+		tables := map[string]int{"artist": 20, "genre": 120, "media_type": 120, "playlist": 120}
+		for name, length := range tables {
+			startInsertWorker(&wg, ctx, name, 0, func() error {
+				_, err := pool.Exec(ctx, fmt.Sprintf(`INSERT INTO "%s"(name) VALUES ($1)`, name), GenerateRandomString(length))
+				return err
+			})
+		}
 
-		fmt.Println("inserting gibberish data into artist table...")
-		go func() {
-			defer wg.Done()
-			for {
-				randStr := GenerateRandomString(20)
-				_, err := pool.Exec(ctx, `INSERT INTO "artist"(name) VALUES ($1)`, randStr)
-				if err != nil {
-					fmt.Println("Error inserting gibberish data into artist table:", err)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-			}
-		}()
-
-		fmt.Println("inserting gibberish data into genre table...")
-		go func() {
-			defer wg.Done()
-			for {
-				randStr := GenerateRandomString(120)
-				_, err := pool.Exec(ctx, `INSERT INTO "genre"(name) VALUES ($1)`, randStr)
-				if err != nil {
-					fmt.Println("Error inserting gibberish data into genre table:", err)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-			}
-		}()
-
-		fmt.Println("inserting gibberish data into media_type table...")
-		go func() {
-			defer wg.Done()
-			for {
-				randStr := GenerateRandomString(120)
-				_, err := pool.Exec(ctx, `INSERT INTO "media_type"(name) VALUES ($1)`, randStr)
-				if err != nil {
-					fmt.Println("Error inserting gibberish data into media_type table:", err)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-			}
-		}()
-
-		fmt.Println("inserting gibberish data into playlist table...")
-		go func() {
-			defer wg.Done()
-			for {
-				randStr := GenerateRandomString(120)
-				_, err := pool.Exec(ctx, `INSERT INTO "playlist"(name) VALUES ($1)`, randStr)
-				if err != nil {
-					fmt.Println("Error inserting gibberish data into playlist table:", err)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-			}
-		}()
-
-		fmt.Println("inserting gibberish data into employee table...")
-		go func() {
-			defer wg.Done()
-			for {
-				len20RandStr := GenerateRandomString(20)
-				len40RandStr := GenerateRandomString(40)
-				len60RandStr := GenerateRandomString(60)
-
-				_, err := pool.Exec(ctx, `
-					INSERT INTO "employee" (
-						last_name, first_name, title, address, city, 
-						state, country, phone, fax, email
-					) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-					len20RandStr, // last_name
-					len20RandStr, // first_name
-					len20RandStr, // title
-					len60RandStr, // address
-					len40RandStr, // city
-					len40RandStr, // state
-					len40RandStr, // country
-					len20RandStr, // phone
-					len20RandStr, // fax
-					len60RandStr, // email
-				)
-
-				if err != nil {
-					fmt.Println("Error inserting gibberish data into employee table:", err)
-					return
-				}
-				select {
-				case <-ctx.Done():
-					return
-				default:
-				}
-
-			}
-		}()
+		startInsertWorker(&wg, ctx, "employee", 0, func() error {
+			s20, s40, s60 := GenerateRandomString(20), GenerateRandomString(40), GenerateRandomString(60)
+			_, err := pool.Exec(ctx, `INSERT INTO "employee" (last_name, first_name, title, address, city, state, country, phone, fax, email) 
+				VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+				s20, s20, s20, s60, s40, s40, s40, s20, s20, s60)
+			return err
+		})
 
 	}
 	wg.Wait()

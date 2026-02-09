@@ -11,7 +11,7 @@
         },
         "timestamp_inserts": {
             "enabled": true,
-            "every_n_seconds": 5
+            "every_n_seconds": 1
         },
         "bigtable_inserts": {
             "enabled": true
