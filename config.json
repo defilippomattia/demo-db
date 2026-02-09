@@ -11,10 +11,10 @@
         },
         "timestamp_inserts": {
             "enabled": true,
-            "every_n_seconds": 1
+            "every_n_seconds": 5
         },
         "bigtable_inserts": {
-            "enabled": false
+            "enabled": true
         },
         "main_tables_inserts": {
             "mode":"gibberish-data",

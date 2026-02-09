@@ -51,23 +51,29 @@ func GenerateRandomString(length int) string {
 	return string(result)
 }
 
-func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
-	//todo: refactor
+func runInsert(ctx context.Context, cfg *InserterConfig, pool *pgxpool.Pool) {
+	//todo: refactor, try db subcontext
 	var wg sync.WaitGroup
 
 	if cfg.Inserter.TimestampInserts.Enabled {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			interval := time.Duration(cfg.Inserter.TimestampInserts.EveryNSeconds) * time.Second
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
 			fmt.Printf("Running timestamp inserts every %d seconds...\n", cfg.Inserter.TimestampInserts.EveryNSeconds)
 			for {
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				_, err := pool.Exec(ctx, `INSERT INTO "timestamp"(created_at) VALUES (NOW())`)
-				cancel()
 				if err != nil {
-					fmt.Println("Error inserting timestamp:", err)
+					fmt.Println("error inserting timestamp:", err)
+					return
 				}
-				time.Sleep(time.Duration(cfg.Inserter.TimestampInserts.EveryNSeconds) * time.Second)
+				select {
+				case <-ticker.C:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}()
 	}
@@ -80,7 +86,6 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			randStr := GenerateRandomString(120)
 
 			for {
-				ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 				_, err := pool.Exec(ctx, `
 					INSERT INTO "bigtable"(cola, colb, colc, cold, cole) VALUES ($1, $2, $3, $4, $5)`,
 					randStr,
@@ -89,9 +94,14 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 					randStr,
 					randStr,
 				)
-				cancel()
 				if err != nil {
 					fmt.Println("Error inserting into bigtable:", err)
+					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 			}
 		}()
@@ -105,12 +115,15 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			defer wg.Done()
 			for {
 				randStr := GenerateRandomString(20)
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := pool.Exec(ctx, `INSERT INTO "artist"(name) VALUES ($1)`, randStr)
-				cancel()
 				if err != nil {
 					fmt.Println("Error inserting gibberish data into artist table:", err)
 					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 			}
 		}()
@@ -120,12 +133,15 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			defer wg.Done()
 			for {
 				randStr := GenerateRandomString(120)
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := pool.Exec(ctx, `INSERT INTO "genre"(name) VALUES ($1)`, randStr)
-				cancel()
 				if err != nil {
 					fmt.Println("Error inserting gibberish data into genre table:", err)
 					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 			}
 		}()
@@ -135,12 +151,15 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			defer wg.Done()
 			for {
 				randStr := GenerateRandomString(120)
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := pool.Exec(ctx, `INSERT INTO "media_type"(name) VALUES ($1)`, randStr)
-				cancel()
 				if err != nil {
 					fmt.Println("Error inserting gibberish data into media_type table:", err)
 					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 			}
 		}()
@@ -150,12 +169,15 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 			defer wg.Done()
 			for {
 				randStr := GenerateRandomString(120)
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := pool.Exec(ctx, `INSERT INTO "playlist"(name) VALUES ($1)`, randStr)
-				cancel()
 				if err != nil {
 					fmt.Println("Error inserting gibberish data into playlist table:", err)
 					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 			}
 		}()
@@ -168,7 +190,6 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 				len40RandStr := GenerateRandomString(40)
 				len60RandStr := GenerateRandomString(60)
 
-				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				_, err := pool.Exec(ctx, `
 					INSERT INTO "employee" (
 						last_name, first_name, title, address, city, 
@@ -185,11 +206,15 @@ func runInsert(cfg *InserterConfig, pool *pgxpool.Pool) {
 					len20RandStr, // fax
 					len60RandStr, // email
 				)
-				cancel()
 
 				if err != nil {
 					fmt.Println("Error inserting gibberish data into employee table:", err)
 					return
+				}
+				select {
+				case <-ctx.Done():
+					return
+				default:
 				}
 
 			}
@@ -258,7 +283,7 @@ func main() {
 
 	case flags.Insert:
 		fmt.Println("Running insert...")
-		runInsert(cfg, dbConn)
+		runInsert(ctx, cfg, dbConn)
 
 	case flags.DropTables:
 		reader := bufio.NewReader(os.Stdin)
