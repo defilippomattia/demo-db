@@ -55,24 +55,38 @@ func startInsertWorker(wg *sync.WaitGroup, ctx context.Context, tableName string
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("Starting insert worker for table %s with interval...\n", tableName)
+		fmt.Printf("Starting insert worker for table %s ...\n", tableName)
+
+		var numOfInserts uint64 = 0
 
 		for {
 			err := task()
 			if err != nil {
 				fmt.Printf("Error inserting into table %s: %v\n", tableName, err)
-				return
+				select {
+				case <-time.After(5 * time.Second):
+				case <-ctx.Done():
+					fmt.Printf("Shutting down worker for %s (Ctrl+C received)\n", tableName)
+					return
+				}
+			}
+
+			numOfInserts++
+			if numOfInserts%1000 == 0 {
+				fmt.Printf("Inserted %d rows into table %s\n", numOfInserts, tableName)
 			}
 
 			if interval > 0 {
 				select {
 				case <-time.After(interval):
 				case <-ctx.Done():
+					fmt.Printf("Shutting down worker for %s (Ctrl+C received)\n", tableName)
 					return
 				}
 			} else {
 				select {
 				case <-ctx.Done():
+					fmt.Printf("Shutting down worker for %s (Ctrl+C received)\n", tableName)
 					return
 				default:
 				}
